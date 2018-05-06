@@ -16,7 +16,7 @@ class PhenoVAE():
     """
     
     def __init__(self, args):
-        """ Initialize model with argument parameters and build
+        """ initialize model with argument parameters and build
         """
 
         self.data_dir       = args.data_dir
@@ -204,7 +204,46 @@ class PhenoVAE():
 #                               shuffle=True,
 #                               epochs=self.epochs,
 #                               steps_per_epoch=100)
-#    
+    
+    def latent_walk(self):
+        """ latent space walking
+        """
+        
+        from scipy.stats import norm
+        import matplotlib.pyplot as plt
+
+        n = 15  # figure with 15x15 samples
+        sample_size = self.image_size
+        
+        figure = np.zeros((sample_size * n, sample_size * n, self.image_channel))
+        
+        # linearly spaced coordinates on the unit square were transformed through the inverse CDF (ppf) of the Gaussian
+        # to produce values of the latent variables z, since the prior of the latent space is Gaussian
+        grid_x = norm.ppf(np.linspace(0.05, 0.95, n))
+        grid_y = norm.ppf(np.linspace(0.05, 0.95, n))
+        
+        
+        for i, yi in enumerate(grid_x):
+            for j, xi in enumerate(grid_y):
+                z_sample = np.array([[xi, yi]])
+                z_sample = np.tile(z_sample, self.batch_size).reshape(self.batch_size, 2)
+                x_decoded = self.decoder.predict(z_sample, batch_size=self.batch_size)
+                sample = x_decoded[0].reshape(sample_size, sample_size, self.image_channel)
+                figure[i * sample_size: (i + 1) * sample_size,
+                       j * sample_size: (j + 1) * sample_size,:] = sample
+        
+        plt.figure(figsize=(10, 10))
+        plt.imshow(figure, cmap='Greys_r')
+        plt.show()
+    
+    
+    def encode(self):
+        """ use a trained model to encode data set
+        """
+        
+        
+        
+        
         
         
         

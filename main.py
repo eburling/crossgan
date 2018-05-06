@@ -34,6 +34,7 @@ def main():
     if args.phase == 'train':
         model = PhenoVAE(args)
         model.train()
+        model.latent_walk()
 
     if args.phase == 'load':
         from keras.models import load_model
