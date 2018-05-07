@@ -9,7 +9,7 @@ from models import PhenoVAE
 parser = argparse.ArgumentParser(description='')
 
 parser.add_argument('--data_dir',       type=str,   default='data',     help='input data directory')
-parser.add_argument('--results_dir',    type=str,   default='results',  help='save directory')
+parser.add_argument('--save_dir',       type=str,   default='save',     help='save directory')
 parser.add_argument('--phase',          type=str,   default='train',    help='train or load')
 
 parser.add_argument('--image_size',     type=int,   default=64,         help='image size')
@@ -29,7 +29,7 @@ args = parser.parse_args()
 
 def main():
 
-    os.makedirs(args.results_dir, exist_ok=True)
+    os.makedirs(args.save_dir, exist_ok=True)
         
     if args.phase == 'train':
         model = PhenoVAE(args)
@@ -38,7 +38,7 @@ def main():
 
     if args.phase == 'load':
         from keras.models import load_model
-        model = load_model(os.path.join(args.results_dir, 'vae_model.h5'))
+        model = load_model(os.path.join(args.save_dir, 'vae_model.h5'))
         
     
 

@@ -20,7 +20,7 @@ class PhenoVAE():
         """
 
         self.data_dir       = args.data_dir
-        self.save_dir       = args.results_dir
+        self.save_dir       = args.save_dir
         self.image_size     = args.image_size
         self.image_channel  = args.image_channel
         self.latent_dim     = args.latent_dim
@@ -180,6 +180,7 @@ class PhenoVAE():
         imageList=glob.glob(os.path.join(self.data_dir, '*.png'))
         
         self.loadedImages = np.array([np.array(Image.open(fname)) for fname in imageList])
+        self.loadedImages = self.loadedImages.astype('float32') / 255.
         
         self.datagen = ImageDataGenerator(rescale=1. / 255,
                                      horizontal_flip = True,
@@ -233,8 +234,9 @@ class PhenoVAE():
                        j * sample_size: (j + 1) * sample_size,:] = sample
         
         plt.figure(figsize=(10, 10))
-        plt.imshow(figure, cmap='Greys_r')
-        plt.show()
+        plt.savefig(os.path.join(self.save_dir, 'latent_walk.pdf'))
+        #plt.imshow(figure, cmap='Greys_r')
+        #plt.show()
     
     
     def encode(self):
