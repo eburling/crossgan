@@ -23,6 +23,7 @@ parser.add_argument('--epochs',         type=int,   default=2,          help='tr
 parser.add_argument('--nfilters',       type=int,   default=64,         help='num convolution filters')
 parser.add_argument('--learn_rate',     type=float, default=0.001,      help='learning rate')
 parser.add_argument('--epsilon_std',    type=float, default=1.0,        help='epsilon width')
+parser.add_argument('--latent_samp',    type=int,   default=10,         help='number of latent samples')
 
 args = parser.parse_args()
 
@@ -34,7 +35,6 @@ def main():
     if args.phase == 'train':
         model = PhenoVAE(args)
         model.train()
-        model.latent_walk()
 
     if args.phase == 'load':
         from keras.models import load_model

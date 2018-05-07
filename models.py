@@ -1,8 +1,11 @@
 import os
+import csv
 import glob 
+import imageio
 from PIL import Image
 import numpy as np
-        
+from scipy.stats import norm
+
 from keras.layers import Input, Conv2D, Flatten, Dense, Reshape, Lambda, Conv2DTranspose
 from keras import optimizers
 from keras import metrics
@@ -31,6 +34,7 @@ class PhenoVAE():
         self.nfilters       = args.nfilters
         self.learn_rate     = args.learn_rate
         self.epsilon_std    = args.epsilon_std
+        self.latent_samp    = args.latent_samp
         
         self.phase          = args.phase
         
@@ -52,7 +56,7 @@ class PhenoVAE():
     
     
     def build_model(self):
-        """ Build VAE model
+        """ build VAE model
         """
         
         input_dim = (self.image_size, self.image_size, self.image_channel)
@@ -115,7 +119,7 @@ class PhenoVAE():
                                    kernel_size=self.num_conv,
                                    padding='same',
                                    strides=1,
-                                   activation='relu')   
+                                   activation='relu')
         
         decoder_deconv_3_upsamp = Conv2DTranspose(self.nfilters,
                                                   kernel_size=(3, 3),
@@ -192,58 +196,58 @@ class PhenoVAE():
     def train(self):
         """ train VAE model
         """
-        
-        self.vae.fit(self.loadedImages,
-                     epochs = self.epochs,
-                     batch_size = self.batch_size)
-        
-        self.vae.save(os.path.join(self.save_dir, 'vae_model.h5'))
-        
+                
 #        self.vae.fit_generator(self.datagen.flow(self.loadedImages,
 #                                                 None,
 #                                                 batch_size = self.batch_size),
 #                               shuffle=True,
 #                               epochs=self.epochs,
 #                               steps_per_epoch=100)
+        
+        self.vae.fit(self.loadedImages,
+                     epochs = self.epochs,
+                     batch_size = self.batch_size)
+        
+        self.vae.save(os.path.join(self.save_dir, 'vae_model.h5'))
+
+        self.encode()        
+        self.latent_walk()
+
     
     def latent_walk(self):
         """ latent space walking
         """
         
-        from scipy.stats import norm
-        import matplotlib.pyplot as plt
-
-        n = 15  # figure with 15x15 samples
-        sample_size = self.image_size
+        figure = np.zeros((self.image_size * self.latent_dim, self.image_size * self.latent_samp, self.image_channel))
         
-        figure = np.zeros((sample_size * n, sample_size * n, self.image_channel))
+        grid_x = norm.ppf(np.linspace(0.05, 0.95, self.latent_samp))
         
-        # linearly spaced coordinates on the unit square were transformed through the inverse CDF (ppf) of the Gaussian
-        # to produce values of the latent variables z, since the prior of the latent space is Gaussian
-        grid_x = norm.ppf(np.linspace(0.05, 0.95, n))
-        grid_y = norm.ppf(np.linspace(0.05, 0.95, n))
-        
-        
-        for i, yi in enumerate(grid_x):
-            for j, xi in enumerate(grid_y):
-                z_sample = np.array([[xi, yi]])
-                z_sample = np.tile(z_sample, self.batch_size).reshape(self.batch_size, 2)
+        for i in range(self.latent_dim):
+            for j, xi in enumerate(grid_x):
+                z_sample = np.zeros(self.latent_dim)
+                z_sample[i] = xi                
+                # since model expects a certain batch, feed identical samples
+                z_sample = np.tile(z_sample, self.batch_size).reshape(self.batch_size, self.latent_dim)
                 x_decoded = self.decoder.predict(z_sample, batch_size=self.batch_size)
-                sample = x_decoded[0].reshape(sample_size, sample_size, self.image_channel)
-                figure[i * sample_size: (i + 1) * sample_size,
-                       j * sample_size: (j + 1) * sample_size,:] = sample
+                
+                sample = x_decoded[0].reshape(self.image_size, self.image_size, self.image_channel)
+                
+                figure[i * self.image_size: (i + 1) * self.image_size,
+                       j * self.image_size: (j + 1) * self.image_size, :] = sample
         
-        plt.figure(figsize=(10, 10))
-        plt.savefig(os.path.join(self.save_dir, 'latent_walk.pdf'))
-        #plt.imshow(figure, cmap='Greys_r')
-        #plt.show()
-    
+        imageio.imwrite(os.path.join(self.save_dir, 'latent_walk.png'), figure)
     
     def encode(self):
         """ use a trained model to encode data set
         """
         
+        x_test_encoded = self.encoder.predict(self.loadedImages, 
+                                              batch_size=self.batch_size)
         
+        outFile = open(os.path.join(self.save_dir, 'encodings.csv'), 'w')
+        with outFile:
+            writer = csv.writer(outFile)
+            writer.writerows(x_test_encoded)
         
         
         
