@@ -1,7 +1,9 @@
 import os
 import csv
+import random
 import glob 
 import imageio
+
 from PIL import Image
 import numpy as np
 from scipy.stats import norm
@@ -37,6 +39,8 @@ class PhenoVAE():
         self.latent_samp    = args.latent_samp
         
         self.phase          = args.phase
+        
+        self.imageList      = glob.glob(os.path.join(self.data_dir, '*.png'))
         
         self.build_model()
         self.build_datagen()
@@ -180,23 +184,30 @@ class PhenoVAE():
     def build_datagen(self):
         """ data generator for VAE
         """
-
-        imageList=glob.glob(os.path.join(self.data_dir, '*.png'))
-        
-        self.loadedImages = np.array([np.array(Image.open(fname)) for fname in imageList])
+        self.loadedImages = np.array([np.array(Image.open(fname)) for fname in self.imageList])
         self.loadedImages = self.loadedImages.astype('float32') / 255.
+
+    
+    def image_generator(self):
+        """ generator that yeilds images
+        """
         
-        self.datagen = ImageDataGenerator(rescale=1. / 255,
-                                     horizontal_flip = True,
-                                     vertical_flip = True)
-        
-        self.datagen.fit(self.loadedImages)
+        sample_files = random.sample(self.imageList, self.batch_size)
+        sample_array = np.array([np.array(Image.open(fname)) for fname in sample_files])
+        sample_array = sample_array.astype('float32') / 255.
+        yield sample_array
+#        for i in range(sample_array.shape[0]):
+#            yield sample_array[i,:,:,:], sample_array[i,:,:,:]
         
         
     def train(self):
         """ train VAE model
         """
                 
+#        self.vae.fit_generator(self.image_generator(),
+#                               epochs=self.epochs,
+#                               steps_per_epoch=100)
+        
 #        self.vae.fit_generator(self.datagen.flow(self.loadedImages,
 #                                                 None,
 #                                                 batch_size = self.batch_size),
@@ -206,12 +217,18 @@ class PhenoVAE():
         
         self.vae.fit(self.loadedImages,
                      epochs = self.epochs,
-                     batch_size = self.batch_size)
+                     batch_size = self.batch_size,
+                     verbose = 2)
         
         self.vae.save(os.path.join(self.save_dir, 'vae_model.h5'))
 
         self.encode()        
         self.latent_walk()
+        self.save_in_out()
+        
+        
+    def save_in_out(self):
+        print('save samples of input images and reconstructions')
 
     
     def latent_walk(self):
@@ -225,8 +242,8 @@ class PhenoVAE():
         for i in range(self.latent_dim):
             for j, xi in enumerate(grid_x):
                 z_sample = np.zeros(self.latent_dim)
-                z_sample[i] = xi                
-                # since model expects a certain batch, feed identical samples
+                z_sample[i] = xi
+                # since model expects a certain batch_size, feed identical samples
                 z_sample = np.tile(z_sample, self.batch_size).reshape(self.batch_size, self.latent_dim)
                 x_decoded = self.decoder.predict(z_sample, batch_size=self.batch_size)
                 
@@ -237,8 +254,9 @@ class PhenoVAE():
         
         imageio.imwrite(os.path.join(self.save_dir, 'latent_walk.png'), figure)
     
+    
     def encode(self):
-        """ use a trained model to encode data set
+        """ encode data with trained model
         """
         
         x_test_encoded = self.encoder.predict(self.loadedImages, 
