@@ -16,7 +16,7 @@ from keras import backend as K
 
 
 class PhenoVAE():
-    """ 2-dimensional variational autoencoder
+    """ 2-dimensional variational autoencoder for latent phenotype capture
     """
     
     def __init__(self, args):
@@ -40,9 +40,7 @@ class PhenoVAE():
         self.verbose        = args.verbose
         
         self.phase          = args.phase
-        
-        self.imageList      = glob.glob(os.path.join(self.data_dir, '*.png'))
-        
+                
         self.build_model()
 
 
@@ -200,7 +198,8 @@ class PhenoVAE():
         
         self.history = self.vae.fit_generator(train_generator,
                                epochs = self.epochs,
-                               steps_per_epoch = self.data_size // self.batch_size)
+                               steps_per_epoch = 2)  # for testing
+                               #steps_per_epoch = self.data_size // self.batch_size)
 
 
         self.vae.save(os.path.join(self.save_dir, 'vae_model.h5'))
@@ -224,7 +223,9 @@ class PhenoVAE():
         to_load = glob.glob(os.path.join(self.data_dir, 'train', '*.png'))[:(self.num_save * self.num_save)]
         
         input_images = np.array([np.array(Image.open(fname)) for fname in to_load])
-        recon_images = self.vae.predict(input_images, batch_size = self.batch_size)
+        scaled_input = input_images / float(255)
+        recon_images = self.vae.predict(scaled_input, batch_size = self.batch_size)
+        scaled_recon = recon_images * float(255)
         
         idx = 0
         for i in range(self.num_save):
@@ -232,7 +233,7 @@ class PhenoVAE():
                 input_figure[i * self.image_size : (i+1) * self.image_size,
                              j * self.image_size : (j+1) * self.image_size, :] = input_images[idx,:,:,:]
                 recon_figure[i * self.image_size : (i+1) * self.image_size,
-                             j * self.image_size : (j+1) * self.image_size, :] = recon_images[idx,:,:,:]
+                             j * self.image_size : (j+1) * self.image_size, :] = scaled_recon[idx,:,:,:]
                 idx += 1
         
         imageio.imwrite(os.path.join(self.save_dir, 'input_images.png'), input_figure)
