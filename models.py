@@ -1,10 +1,9 @@
 import os
 import csv
-import random
 import glob 
 import imageio
-
 from PIL import Image
+
 import numpy as np
 from scipy.stats import norm
 
@@ -37,6 +36,7 @@ class PhenoVAE():
         self.learn_rate     = args.learn_rate
         self.epsilon_std    = args.epsilon_std
         self.latent_samp    = args.latent_samp
+        self.num_save       = args.num_save
         self.verbose        = args.verbose
         
         self.phase          = args.phase
@@ -103,7 +103,7 @@ class PhenoVAE():
 
         output_dim = (self.batch_size, self.image_size//2, self.image_size//2, self.nfilters)
         
-        #   instantiate rather than pass through 
+        #   instantiate rather than pass through for later resuse
         
         decoder_hid = Dense(self.inter_dim, 
                             activation='relu')
@@ -155,7 +155,6 @@ class PhenoVAE():
         _x_decoded_relu         = decoder_deconv_3_upsamp(_deconv_2_decoded)
         _x_decoded_mean_squash  = decoder_mean_squash(_x_decoded_relu)
         
-        
         #   instantiate VAE models
         
         self.vae = Model(x, x_decoded_mean_squash)
@@ -173,13 +172,6 @@ class PhenoVAE():
             return vae_loss
         
         
-        
-#        xent_loss = self.image_size * self.image_size * metrics.binary_crossentropy(K.flatten(x), 
-#                                                                                    K.flatten(x_decoded_mean_squash))
-#        kl_loss = - 0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
-#        vae_loss = K.mean(xent_loss + kl_loss)
-#        self.vae.add_loss(vae_loss)
-        
         rms = optimizers.adagrad(lr = self.learn_rate)
         
         self.vae.compile(optimizer = rms,
@@ -193,30 +185,59 @@ class PhenoVAE():
         """ train VAE model
         """
 
-        datagen = ImageDataGenerator(rescale = 1./255,
+        train_datagen = ImageDataGenerator(rescale = 1./255,
                                            horizontal_flip = True,
                                            vertical_flip = True)
                         
-        train_generator = datagen.flow_from_directory(
+        train_generator = train_datagen.flow_from_directory(
                 self.data_dir,
                 target_size = (self.image_size, self.image_size),
                 batch_size = self.batch_size,
                 class_mode = 'input')
         
-        self.vae.fit_generator(train_generator,
+        
+        self.data_size = len(os.listdir(os.path.join(self.data_dir, 'train')))
+        
+        self.history = self.vae.fit_generator(train_generator,
                                epochs = self.epochs,
-                               steps_per_epoch = 47000 // self.batch_size)
-                
-        self.vae.save(os.path.join(self.save_dir, 'vae_model.h5'))
+                               steps_per_epoch = self.data_size // self.batch_size)
 
+
+        self.vae.save(os.path.join(self.save_dir, 'vae_model.h5'))
+        
+        np.savetxt(os.path.join(self.save_dir, 'history.csv'), 
+                   self.history.history['loss'],
+                   delimiter=',')
+        
         self.encode()        
         self.latent_walk()
-        self.save_in_out()
+        self.save_input_reconstruction()
         
         
-    def save_in_out(self):
-        print('save samples of input images and reconstructions')
-
+    def save_input_reconstruction(self):
+        """ save grid of both input and reconstructed images side by side
+        """
+        
+        input_figure = np.zeros((self.image_size * self.num_save, self.image_size * self.num_save, self.image_channel))
+        recon_figure = np.zeros((self.image_size * self.num_save, self.image_size * self.num_save, self.image_channel))
+        
+        to_load = glob.glob(os.path.join(self.data_dir, 'train', '*.png'))[:(self.num_save * self.num_save)]
+        
+        input_images = np.array([np.array(Image.open(fname)) for fname in to_load])
+        recon_images = self.vae.predict(input_images, batch_size = self.batch_size)
+        
+        idx = 0
+        for i in range(self.num_save):
+            for j in range(self.num_save):
+                input_figure[i * self.image_size : (i+1) * self.image_size,
+                             j * self.image_size : (j+1) * self.image_size, :] = input_images[idx,:,:,:]
+                recon_figure[i * self.image_size : (i+1) * self.image_size,
+                             j * self.image_size : (j+1) * self.image_size, :] = recon_images[idx,:,:,:]
+                idx += 1
+        
+        imageio.imwrite(os.path.join(self.save_dir, 'input_images.png'), input_figure)
+        imageio.imwrite(os.path.join(self.save_dir, 'recon_images.png'), recon_figure)
+        
     
     def latent_walk(self):
         """ latent space walking
@@ -246,8 +267,17 @@ class PhenoVAE():
         """ encode data with trained model
         """
         
-        x_test_encoded = self.encoder.predict(self.loadedImages, 
-                                              batch_size=self.batch_size)
+        test_datagen = ImageDataGenerator(rescale = 1./255)
+        
+        test_generator = test_datagen.flow_from_directory(
+                self.data_dir,
+                target_size = (self.image_size, self.image_size),
+                batch_size = self.batch_size,
+                shuffle = False,
+                class_mode = 'input')
+
+        x_test_encoded = self.encoder.predict_generator(test_generator,
+                                                        self.batch_size)
         
         outFile = open(os.path.join(self.save_dir, 'encodings.csv'), 'w')
         with outFile:
