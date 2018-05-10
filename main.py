@@ -24,6 +24,7 @@ parser.add_argument('--nfilters',       type=int,   default=64,         help='nu
 parser.add_argument('--learn_rate',     type=float, default=0.001,      help='learning rate')
 parser.add_argument('--epsilon_std',    type=float, default=1.0,        help='epsilon width')
 parser.add_argument('--latent_samp',    type=int,   default=10,         help='number of latent samples')
+parser.add_argument('--verbose',        type=int,   default=2,          help='1=verbose, 2=quiet')
 
 args = parser.parse_args()
 
@@ -41,7 +42,5 @@ def main():
         model = load_model(os.path.join(args.save_dir, 'vae_model.h5'))
         
     
-
-# run main function
 if __name__ == '__main__':
     main()

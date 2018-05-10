@@ -37,15 +37,15 @@ class PhenoVAE():
         self.learn_rate     = args.learn_rate
         self.epsilon_std    = args.epsilon_std
         self.latent_samp    = args.latent_samp
+        self.verbose        = args.verbose
         
         self.phase          = args.phase
         
         self.imageList      = glob.glob(os.path.join(self.data_dir, '*.png'))
         
         self.build_model()
-        self.build_datagen()
-    
-    
+
+
     def sampling(self, sample_args):
         """ sample latent layer from normal prior
         """
@@ -70,11 +70,11 @@ class PhenoVAE():
         x = Input(shape=input_dim)
         
         conv_1 = Conv2D(self.image_channel,
-                        kernel_size=(2, 2),
+                        kernel_size=self.num_conv,
                         padding='same', activation='relu')(x)
         
         conv_2 = Conv2D(self.nfilters,
-                        kernel_size=(2, 2),
+                        kernel_size=self.num_conv,
                         padding='same', activation='relu',
                         strides=(2, 2))(conv_1)
         
@@ -126,15 +126,15 @@ class PhenoVAE():
                                    activation='relu')
         
         decoder_deconv_3_upsamp = Conv2DTranspose(self.nfilters,
-                                                  kernel_size=(3, 3),
-                                                  strides=(2, 2),
-                                                  padding='valid',
-                                                  activation='relu')
+                                                  kernel_size = self.num_conv,
+                                                  strides = (2, 2),
+                                                  padding = 'valid',
+                                                  activation = 'relu')
         
         decoder_mean_squash = Conv2D(self.image_channel,
-                                     kernel_size=2,
-                                     padding='valid',
-                                     activation='sigmoid')
+                                     kernel_size = 2,
+                                     padding = 'valid',
+                                     activation = 'sigmoid')
         
         hid_decoded             = decoder_hid(z)
         up_decoded              = decoder_upsample(hid_decoded)
@@ -146,14 +146,14 @@ class PhenoVAE():
 
         #   need to keep generator model separate so new inputs can be used
         
-        decoder_input = Input(shape=(self.latent_dim,))
-        _hid_decoded = decoder_hid(decoder_input)
-        _up_decoded = decoder_upsample(_hid_decoded)
-        _reshape_decoded = decoder_reshape(_up_decoded)
-        _deconv_1_decoded = decoder_deconv_1(_reshape_decoded)
-        _deconv_2_decoded = decoder_deconv_2(_deconv_1_decoded)
-        _x_decoded_relu = decoder_deconv_3_upsamp(_deconv_2_decoded)
-        _x_decoded_mean_squash = decoder_mean_squash(_x_decoded_relu)
+        decoder_input           = Input(shape=(self.latent_dim,))
+        _hid_decoded            = decoder_hid(decoder_input)
+        _up_decoded             = decoder_upsample(_hid_decoded)
+        _reshape_decoded        = decoder_reshape(_up_decoded)
+        _deconv_1_decoded       = decoder_deconv_1(_reshape_decoded)
+        _deconv_2_decoded       = decoder_deconv_2(_deconv_1_decoded)
+        _x_decoded_relu         = decoder_deconv_3_upsamp(_deconv_2_decoded)
+        _x_decoded_mean_squash  = decoder_mean_squash(_x_decoded_relu)
         
         
         #   instantiate VAE models
@@ -164,62 +164,49 @@ class PhenoVAE():
         
         
         #   VAE loss terms w/ KL divergence
+            
+        def vae_loss(x, x_decoded_mean_squash):
+            xent_loss = self.image_size * self.image_size * metrics.binary_crossentropy(K.flatten(x),
+                                                                                        K.flatten(x_decoded_mean_squash))
+            kl_loss = - 0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+            vae_loss = K.mean(xent_loss + kl_loss)
+            return vae_loss
         
-        xent_loss = self.image_size * self.image_size * metrics.binary_crossentropy(K.flatten(x), 
-                                                                                    K.flatten(x_decoded_mean_squash))
         
-        kl_loss = - 0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+        
+#        xent_loss = self.image_size * self.image_size * metrics.binary_crossentropy(K.flatten(x), 
+#                                                                                    K.flatten(x_decoded_mean_squash))
+#        kl_loss = - 0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+#        vae_loss = K.mean(xent_loss + kl_loss)
+#        self.vae.add_loss(vae_loss)
+        
+        rms = optimizers.adagrad(lr = self.learn_rate)
+        
+        self.vae.compile(optimizer = rms,
+                         loss = vae_loss)
 
-        vae_loss = K.mean(xent_loss + kl_loss)
-        
-        self.vae.add_loss(vae_loss)
-        
-        rms = optimizers.adagrad(lr=self.learn_rate)
-        
-        self.vae.compile(optimizer=rms)
         
         self.vae.summary()
             
     
-    def build_datagen(self):
-        """ data generator for VAE
-        """
-        self.loadedImages = np.array([np.array(Image.open(fname)) for fname in self.imageList])
-        self.loadedImages = self.loadedImages.astype('float32') / 255.
-
-    
-    def image_generator(self):
-        """ generator that yeilds images
-        """
-        
-        sample_files = random.sample(self.imageList, self.batch_size)
-        sample_array = np.array([np.array(Image.open(fname)) for fname in sample_files])
-        sample_array = sample_array.astype('float32') / 255.
-        yield sample_array
-#        for i in range(sample_array.shape[0]):
-#            yield sample_array[i,:,:,:], sample_array[i,:,:,:]
-        
-        
     def train(self):
         """ train VAE model
         """
+
+        datagen = ImageDataGenerator(rescale = 1./255,
+                                           horizontal_flip = True,
+                                           vertical_flip = True)
+                        
+        train_generator = datagen.flow_from_directory(
+                self.data_dir,
+                target_size = (self.image_size, self.image_size),
+                batch_size = self.batch_size,
+                class_mode = 'input')
+        
+        self.vae.fit_generator(train_generator,
+                               epochs = self.epochs,
+                               steps_per_epoch = 47000 // self.batch_size)
                 
-#        self.vae.fit_generator(self.image_generator(),
-#                               epochs=self.epochs,
-#                               steps_per_epoch=100)
-        
-#        self.vae.fit_generator(self.datagen.flow(self.loadedImages,
-#                                                 None,
-#                                                 batch_size = self.batch_size),
-#                               shuffle=True,
-#                               epochs=self.epochs,
-#                               steps_per_epoch=100)
-        
-        self.vae.fit(self.loadedImages,
-                     epochs = self.epochs,
-                     batch_size = self.batch_size,
-                     verbose = 2)
-        
         self.vae.save(os.path.join(self.save_dir, 'vae_model.h5'))
 
         self.encode()        
